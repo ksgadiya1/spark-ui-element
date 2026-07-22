@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, Send, CalendarClock } from "lucide-react";
+import { Loader2, Send, CalendarClock, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,9 +16,10 @@ interface Props {
   campaignData: CreateCampaignPayload;
   onPublished?: (campaign: Campaign) => void;
   onScheduled?: (campaign: Campaign) => void;
+  onViewDetails?: (campaign: Campaign) => void;
 }
 
-export function CampaignReviewPanel({ campaignData, onPublished, onScheduled }: Props) {
+export function CampaignReviewPanel({ campaignData, onPublished, onScheduled, onViewDetails }: Props) {
   const { toast } = useToast();
   const [publishLoading, setPublishLoading] = useState(false);
   const [scheduleLoading, setScheduleLoading] = useState(false);
@@ -73,7 +74,6 @@ export function CampaignReviewPanel({ campaignData, onPublished, onScheduled }: 
         {result && <CampaignStatusBadge status={result.sync_status} />}
       </div>
 
-      {/* Schedule input */}
       <div className="space-y-1">
         <Label htmlFor="schedule-dt" className="text-xs text-muted-foreground">
           Schedule for (optional)
@@ -91,7 +91,7 @@ export function CampaignReviewPanel({ campaignData, onPublished, onScheduled }: 
         <Button
           size="sm"
           onClick={handlePublish}
-          disabled={publishLoading || scheduleLoading || !!scheduledAt}
+          disabled={publishLoading || scheduleLoading || !!scheduledAt || !!result}
           className="flex-1"
         >
           {publishLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
@@ -102,13 +102,19 @@ export function CampaignReviewPanel({ campaignData, onPublished, onScheduled }: 
           size="sm"
           variant="outline"
           onClick={handleSchedule}
-          disabled={scheduleLoading || publishLoading || !scheduledAt}
+          disabled={scheduleLoading || publishLoading || !scheduledAt || !!result}
           className="flex-1"
         >
           {scheduleLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CalendarClock className="w-4 h-4 mr-2" />}
-          Schedule Campaign
+          Schedule
         </Button>
       </div>
+
+      {result && onViewDetails && (
+        <Button size="sm" variant="outline" className="w-full" onClick={() => onViewDetails(result)}>
+          <ExternalLink className="w-4 h-4 mr-2" /> View Campaign Details
+        </Button>
+      )}
     </div>
   );
 }

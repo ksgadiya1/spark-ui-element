@@ -6,6 +6,7 @@ const config: Record<SyncStatus, { label: string; className: string }> = {
   scheduled: { label: "Scheduled", className: "bg-blue-100 text-blue-700 hover:bg-blue-100" },
   published: { label: "Live",      className: "bg-green-100 text-green-700 hover:bg-green-100" },
   failed:    { label: "Failed",    className: "bg-red-100 text-red-700 hover:bg-red-100" },
+  archived:  { label: "Archived",  className: "bg-yellow-100 text-yellow-700 hover:bg-yellow-100" },
 };
 
 export function CampaignStatusBadge({ status }: { status: SyncStatus }) {

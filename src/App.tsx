@@ -16,11 +16,12 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { Menu, X, ChevronDown, Bot, Zap, Palette, Code, FileText, Image, BarChart3, Copy, RotateCcw, Plus, History, Loader2, Minus, ArrowLeft, Download, Instagram, Linkedin, Twitter, Facebook, InfinityIcon, Atom } from 'lucide-react';
+import { Menu, X, ChevronDown, Bot, Zap, Palette, Code, FileText, Image, BarChart3, Copy, RotateCcw, Plus, History, Loader2, Minus, ArrowLeft, Download, Instagram, Linkedin, Twitter, Facebook, InfinityIcon, Atom, Megaphone } from 'lucide-react';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { CampaignReviewPanel } from '@/components/campaign/CampaignReviewPanel';
 import { CampaignDetailPanel } from '@/components/campaign/CampaignDetailPanel';
 import { CampaignStatusBadge } from '@/components/campaign/CampaignStatusBadge';
+import { AdsManagerTab } from '@/components/campaign/AdsManagerTab';
 import type { Campaign, CreateCampaignPayload } from '@/services/api';
 import { Document, ExternalHyperlink, Packer, Paragraph, TextRun } from 'docx';
 import { dummyHistory, HistoryEntry, ModelResponse } from '@/utils/dummyHistoryHelper';
@@ -239,8 +240,9 @@ const App = () => {
     const [isNewEntry, setIsNewEntry] = useState(true);
     const [showFormSection, setShowFormSection] = useState(false);
     const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+    const [activeTab, setActiveTab] = useState<'playground' | 'ads'>('playground');
     // per-card campaign state: keyed by output index
-    const [cardCampaigns, setCardCampaigns] = useState<Record<number, Campaign>>({});
+    const [cardCampaigns, setCardCampaigns] = useState<Record<number, Campaign>>({})
 
     useEffect(() => {
         // Check for saved theme preference or default to light mode
@@ -968,6 +970,32 @@ const App = () => {
                             </div>
                         </div>
 
+                        {/* Tab switcher */}
+                        <div className="flex items-center bg-muted rounded-lg p-1 gap-1">
+                            <button
+                                onClick={() => setActiveTab('playground')}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                                    activeTab === 'playground'
+                                        ? 'bg-background shadow-sm text-foreground'
+                                        : 'text-muted-foreground hover:text-foreground'
+                                }`}
+                            >
+                                <Bot className="w-4 h-4" />
+                                <span className="hidden sm:inline">AI Playground</span>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('ads')}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                                    activeTab === 'ads'
+                                        ? 'bg-background shadow-sm text-foreground'
+                                        : 'text-muted-foreground hover:text-foreground'
+                                }`}
+                            >
+                                <Megaphone className="w-4 h-4" />
+                                <span className="hidden sm:inline">Ads Manager</span>
+                            </button>
+                        </div>
+
                         <Button
                             variant="outline"
                             size="sm"
@@ -985,6 +1013,13 @@ const App = () => {
 
                 {/* Main Content */}
                 <div className="flex h-[calc(100vh-6rem)] overflow-hidden">
+                {activeTab === 'ads' && (
+                    <div className="flex-1 overflow-hidden">
+                        <AdsManagerTab />
+                    </div>
+                )}
+                {activeTab === 'playground' && (
+                    <>
                     {/* Left Panel: Navigation and Controls */}
                     <div className={`${isLeftPanelVisible ? (isMobile ? 'w-full' : 'w-80') : 'w-0'} transition-all duration-300 overflow-hidden border-r border-border bg-card h-full ${isMobile && isLeftPanelVisible ? 'absolute z-10' : ''}`}>
                         <div className="p-6 h-full flex flex-col overflow-y-auto">
@@ -1380,7 +1415,7 @@ const App = () => {
                                                         {cardCampaigns[index] && (
                                                             <span
                                                                 className="cursor-pointer"
-                                                                onClick={() => cardCampaigns[index]?.sync_status === 'published' && setSelectedCampaignId(cardCampaigns[index].id)}
+                                                                onClick={() => cardCampaigns[index]?.id && setSelectedCampaignId(cardCampaigns[index].id)}
                                                             >
                                                                 <CampaignStatusBadge status={cardCampaigns[index].sync_status} />
                                                             </span>
@@ -1435,7 +1470,7 @@ const App = () => {
                                                     )}
                                                 </div>
 
-                                                {/* Task 1 & 2 — Publish / Schedule panel */}
+                                                {/* Publish / Schedule panel */}
                                                 {!output.isError && (
                                                     <CampaignReviewPanel
                                                         campaignData={{
@@ -1449,6 +1484,7 @@ const App = () => {
                                                         } satisfies CreateCampaignPayload}
                                                         onPublished={(c) => setCardCampaigns(prev => ({ ...prev, [index]: c }))}
                                                         onScheduled={(c) => setCardCampaigns(prev => ({ ...prev, [index]: c }))}
+                                                        onViewDetails={(c) => setSelectedCampaignId(c.id)}
                                                     />
                                                 )}
                                             </CardContent>
@@ -1466,20 +1502,29 @@ const App = () => {
                             onClose={() => setMessageBox(null)}
                         />
                     )}
+                    </>
+                )}
+
                 </div>
-
             </div>
-
             <Toaster />
             <Sonner />
 
-            {/* Task 4 — Campaign detail sheet */}
+            {/* Campaign detail sheet */}
             <Sheet open={!!selectedCampaignId} onOpenChange={(open) => !open && setSelectedCampaignId(null)}>
                 <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
                     {selectedCampaignId && (
                         <CampaignDetailPanel
                             campaignId={selectedCampaignId}
                             onClose={() => setSelectedCampaignId(null)}
+                            onDeleted={() => {
+                                setSelectedCampaignId(null);
+                                setCardCampaigns({});
+                            }}
+                            onDuplicated={(newCampaign) => {
+                                setSelectedCampaignId(newCampaign.id);
+                                toast({ title: 'Campaign duplicated', description: newCampaign.name, variant: 'success' });
+                            }}
                         />
                     )}
                 </SheetContent>
