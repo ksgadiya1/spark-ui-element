@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   Loader2, RefreshCw, Search, Pause, Play, Archive,
-  Trash2, Copy, RotateCcw, Eye, TrendingUp, Users,
-  CheckCircle2, XCircle, Clock, AlertCircle, Radio,
+  Trash2, Eye, TrendingUp,
+  XCircle, Clock, AlertCircle, Radio,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,8 +20,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { CampaignDetailPanel } from "@/components/campaign/CampaignDetailPanel";
 import {
-  getCampaigns, pauseCampaign, resumeCampaign,
-  archiveCampaign, deleteCampaign, duplicateCampaign, syncCampaign,
+  getCampaigns, pauseCampaign, resumeCampaign, deleteCampaign,
   type Campaign, type SyncStatus, type MetaStatus,
 } from "@/services/api";
 
@@ -153,20 +152,6 @@ function CampaignRow({ campaign: c, onAction, actionLoading, onViewDetails }: Ro
           </Button>
         )}
 
-        <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => onAction("sync", c.id)} disabled={!!actionLoading} title="Sync with Meta">
-          {busy("sync") ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-        </Button>
-
-        <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => onAction("duplicate", c.id)} disabled={!!actionLoading} title="Duplicate">
-          {busy("duplicate") ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
-        </Button>
-
-        {c.sync_status !== "archived" && (
-          <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => onAction("archive", c.id)} disabled={!!actionLoading} title="Archive">
-            {busy("archive") ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
-          </Button>
-        )}
-
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-destructive hover:text-destructive" disabled={!!actionLoading} title="Delete">
@@ -226,12 +211,9 @@ export function AdsManagerTab() {
     setActionLoading(key);
     try {
       switch (action) {
-        case "pause":     await pauseCampaign(id);     break;
-        case "resume":    await resumeCampaign(id);    break;
-        case "archive":   await archiveCampaign(id);   break;
-        case "duplicate": await duplicateCampaign(id); break;
-        case "sync":      await syncCampaign(id);      break;
-        case "delete":    await deleteCampaign(id);    break;
+        case "pause":  await pauseCampaign(id);  break;
+        case "resume": await resumeCampaign(id); break;
+        case "delete": await deleteCampaign(id); break;
       }
       toast({ title: `${action.charAt(0).toUpperCase() + action.slice(1)} successful`, variant: "success" });
       await fetchCampaigns();
@@ -337,7 +319,6 @@ export function AdsManagerTab() {
               campaignId={selectedId}
               onClose={() => setSelectedId(null)}
               onDeleted={() => { setSelectedId(null); fetchCampaigns(); }}
-              onDuplicated={(nc) => { setSelectedId(nc.id); fetchCampaigns(); }}
             />
           )}
         </SheetContent>

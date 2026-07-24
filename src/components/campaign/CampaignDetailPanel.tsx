@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import {
-  Loader2, Pause, Play, Archive, Trash2, Copy, RefreshCw,
-  RotateCcw, Users, BarChart3, Palette, Info, Pencil, Check, X,
+  Loader2, Pause, Play, Trash2, RefreshCw,
+  Users, BarChart3, Palette, Info, Pencil, Check, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,8 +21,7 @@ import { CampaignLeads } from "./CampaignLeads";
 import { CampaignCreativePreview } from "./CampaignCreativePreview";
 import {
   getCampaign, getCampaignInsights, updateCampaign,
-  pauseCampaign, resumeCampaign, archiveCampaign,
-  deleteCampaign, duplicateCampaign, syncCampaign, refreshCampaign,
+  pauseCampaign, resumeCampaign, deleteCampaign,
   type Campaign, type CampaignInsights,
 } from "@/services/api";
 
@@ -30,7 +29,6 @@ interface Props {
   campaignId: string;
   onClose?: () => void;
   onDeleted?: () => void;
-  onDuplicated?: (newCampaign: Campaign) => void;
 }
 
 interface EditForm {
@@ -44,7 +42,7 @@ interface EditForm {
   image_url: string;
 }
 
-export function CampaignDetailPanel({ campaignId, onClose, onDeleted, onDuplicated }: Props) {
+export function CampaignDetailPanel({ campaignId, onClose, onDeleted }: Props) {
   const { toast } = useToast();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [insights, setInsights] = useState<CampaignInsights | null>(null);
@@ -150,13 +148,9 @@ export function CampaignDetailPanel({ campaignId, onClose, onDeleted, onDuplicat
     }
   };
 
-  const handlePause     = () => runAction("Pause",     () => pauseCampaign(campaignId),     (r) => setCampaign(r as Campaign));
-  const handleResume    = () => runAction("Resume",    () => resumeCampaign(campaignId),    (r) => setCampaign(r as Campaign));
-  const handleArchive   = () => runAction("Archive",   () => archiveCampaign(campaignId),   (r) => setCampaign(r as Campaign));
-  const handleSync      = () => runAction("Sync",      () => syncCampaign(campaignId),      (r) => setCampaign(r as Campaign));
-  const handleRefresh   = () => { runAction("Refresh", () => refreshCampaign(campaignId),  (r) => setCampaign(r as Campaign)); fetchInsights(campaignId); };
-  const handleDuplicate = () => runAction("Duplicate", () => duplicateCampaign(campaignId), (r) => onDuplicated?.(r as Campaign));
-  const handleDelete    = () => runAction("Delete",    () => deleteCampaign(campaignId),    () => { onDeleted?.(); onClose?.(); });
+  const handlePause  = () => runAction("Pause",  () => pauseCampaign(campaignId),  (r) => setCampaign(r as Campaign));
+  const handleResume = () => runAction("Resume", () => resumeCampaign(campaignId), (r) => setCampaign(r as Campaign));
+  const handleDelete = () => runAction("Delete", () => deleteCampaign(campaignId), () => { onDeleted?.(); onClose?.(); });
 
   const busy = (label: string) => actionLoading === label;
 
@@ -170,8 +164,8 @@ export function CampaignDetailPanel({ campaignId, onClose, onDeleted, onDuplicat
 
   if (!campaign) return null;
 
-  const isActive  = campaign.meta_status === "ACTIVE";
-  const isPaused  = campaign.meta_status === "PAUSED";
+  const isActive = campaign.meta_status === "ACTIVE";
+  const isPaused = campaign.meta_status === "PAUSED";
 
   return (
     <div className="space-y-4 p-4">
@@ -257,24 +251,10 @@ export function CampaignDetailPanel({ campaignId, onClose, onDeleted, onDuplicat
             Resume
           </Button>
         )}
-        <Button size="sm" variant="outline" onClick={handleSync} disabled={!!actionLoading}>
-          {busy("Sync") ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <RotateCcw className="w-4 h-4 mr-1" />}
-          Sync
+        <Button size="sm" variant="outline" onClick={() => fetchInsights(campaignId)} disabled={loadingInsights}>
+          {loadingInsights ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1" />}
+          Refresh Insights
         </Button>
-        <Button size="sm" variant="outline" onClick={handleRefresh} disabled={!!actionLoading}>
-          {busy("Refresh") ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1" />}
-          Refresh
-        </Button>
-        <Button size="sm" variant="outline" onClick={handleDuplicate} disabled={!!actionLoading}>
-          {busy("Duplicate") ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Copy className="w-4 h-4 mr-1" />}
-          Duplicate
-        </Button>
-        {campaign.sync_status !== "archived" && (
-          <Button size="sm" variant="outline" onClick={handleArchive} disabled={!!actionLoading}>
-            {busy("Archive") ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Archive className="w-4 h-4 mr-1" />}
-            Archive
-          </Button>
-        )}
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button size="sm" variant="destructive" disabled={!!actionLoading}>

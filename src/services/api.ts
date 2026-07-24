@@ -60,17 +60,26 @@ export interface CampaignInsights {
   date_stop?: string;
 }
 
-export interface CampaignCreative {
-  headline: string;
-  primary_text: string;
-  description?: string;
-  cta?: string;
-  destination_url: string;
-  image_url?: string;
-  video_url?: string;
-  preview_url?: string;
-  meta_creative_id?: string;
+export interface AdSet {
+  id: string;
+  campaign_id: string;
+  name: string;
+  status?: MetaStatus;
+  daily_budget?: number;
+  created_at: string;
 }
+
+export interface Ad {
+  id: string;
+  adset_id: string;
+  name: string;
+  status?: MetaStatus;
+  creative_id?: string;
+  created_at: string;
+}
+
+export interface AdSetInsights extends CampaignInsights {}
+export interface AdInsights extends CampaignInsights {}
 
 export interface Lead {
   id: string;
@@ -91,11 +100,6 @@ export interface LeadListResponse {
   total: number;
   page: number;
   page_size: number;
-}
-
-export interface CampaignPreview {
-  preview_url: string;
-  format: string;
 }
 
 export interface CreateCampaignPayload {
@@ -149,31 +153,50 @@ export const pauseCampaign = (id: string) =>
 export const resumeCampaign = (id: string) =>
   request<Campaign>(`/campaigns/${id}/resume`, { method: "POST" });
 
-export const archiveCampaign = (id: string) =>
-  request<Campaign>(`/campaigns/${id}/archive`, { method: "POST" });
-
 export const deleteCampaign = (id: string) =>
   request<{ success: boolean }>(`/campaigns/${id}`, { method: "DELETE" });
-
-export const duplicateCampaign = (id: string) =>
-  request<Campaign>(`/campaigns/${id}/duplicate`, { method: "POST" });
-
-export const syncCampaign = (id: string) =>
-  request<Campaign>(`/campaigns/${id}/sync`, { method: "POST" });
-
-export const refreshCampaign = (id: string) =>
-  request<Campaign>(`/campaigns/${id}/refresh`, { method: "POST" });
 
 // ── Analytics & Insights ───────────────────────────────────────────────────
 
 export const getCampaignInsights = (id: string) =>
   request<CampaignInsights>(`/campaigns/${id}/insights`);
 
-export const getCampaignPreview = (id: string) =>
-  request<CampaignPreview>(`/campaigns/${id}/preview`);
+// ── Ad Sets ────────────────────────────────────────────────────────────────
 
-export const getCampaignCreative = (id: string) =>
-  request<CampaignCreative>(`/campaigns/${id}/creative`);
+export const getAdSets = (campaignId: string) =>
+  request<AdSet[]>(`/campaigns/${campaignId}/adsets`);
+
+export const createAdSet = (campaignId: string, payload: Partial<AdSet>) =>
+  request<AdSet>(`/campaigns/${campaignId}/adsets`, { method: "POST", body: JSON.stringify(payload) });
+
+export const updateAdSet = (id: string, payload: Partial<AdSet>) =>
+  request<AdSet>(`/adsets/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+
+export const deleteAdSet = (id: string) =>
+  request<{ success: boolean }>(`/adsets/${id}`, { method: "DELETE" });
+
+export const getAdSetInsights = (id: string) =>
+  request<AdSetInsights>(`/adsets/${id}/insights`);
+
+// ── Ads ────────────────────────────────────────────────────────────────────
+
+export const getAds = (adsetId: string) =>
+  request<Ad[]>(`/adsets/${adsetId}/ads`);
+
+export const createAd = (adsetId: string, payload: Partial<Ad>) =>
+  request<Ad>(`/adsets/${adsetId}/ads`, { method: "POST", body: JSON.stringify(payload) });
+
+export const publishAd = (id: string) =>
+  request<Ad>(`/ads/${id}/publish`, { method: "POST" });
+
+export const updateAd = (id: string, payload: Partial<Ad>) =>
+  request<Ad>(`/ads/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+
+export const deleteAd = (id: string) =>
+  request<{ success: boolean }>(`/ads/${id}`, { method: "DELETE" });
+
+export const getAdInsights = (id: string) =>
+  request<AdInsights>(`/ads/${id}/insights`);
 
 // ── Leads ──────────────────────────────────────────────────────────────────
 
