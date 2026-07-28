@@ -198,6 +198,15 @@ export const deleteAd = (id: string) =>
 export const getAdInsights = (id: string) =>
   request<AdInsights>(`/ads/${id}/insights`);
 
+// ── Campaign Tree ─────────────────────────────────────────────────────────
+
+export interface AdTreeItem { id: string; name: string; status?: string; }
+export interface AdSetTreeItem { id: string; name: string; status?: string; ads: AdTreeItem[]; }
+export interface CampaignTreeItem { id: string; name: string; sync_status: string; adsets: AdSetTreeItem[]; }
+
+export const getCampaignsTree = () =>
+  request<CampaignTreeItem[]>("/campaigns/tree");
+
 // ── Leads ──────────────────────────────────────────────────────────────────
 
 export const getCampaignLeads = (id: string, page = 1, search = "") =>

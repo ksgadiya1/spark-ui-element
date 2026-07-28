@@ -183,14 +183,25 @@ function CampaignRow({ campaign: c, onAction, actionLoading, onViewDetails }: Ro
 
 // ── Main component ──────────────────────────────────────────────────────────
 
-export function AdsManagerTab() {
+export function AdsManagerTab({
+  initialSelectedId,
+  onSelectedIdChange,
+}: {
+  initialSelectedId?: string | null;
+  onSelectedIdChange?: (id: string | null) => void;
+}) {
   const { toast } = useToast();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialSelectedId ?? null);
+
+  const handleSetSelectedId = (id: string | null) => {
+    setSelectedId(id);
+    onSelectedIdChange?.(id);
+  };
 
   const fetchCampaigns = useCallback(async () => {
     setLoading(true);
@@ -205,6 +216,10 @@ export function AdsManagerTab() {
   }, [toast]);
 
   useEffect(() => { fetchCampaigns(); }, [fetchCampaigns]);
+
+  useEffect(() => {
+    if (initialSelectedId) setSelectedId(initialSelectedId);
+  }, [initialSelectedId]);
 
   const handleAction = async (action: string, id: string) => {
     const key = `${action}-${id}`;
@@ -301,7 +316,7 @@ export function AdsManagerTab() {
               campaign={c}
               onAction={handleAction}
               actionLoading={actionLoading}
-              onViewDetails={setSelectedId}
+              onViewDetails={handleSetSelectedId}
             />
           ))}
           <p className="text-xs text-muted-foreground text-right pt-1">
@@ -311,14 +326,14 @@ export function AdsManagerTab() {
       )}
 
       {/* Detail slide-out */}
-      <Sheet open={!!selectedId} onOpenChange={(open) => !open && setSelectedId(null)}>
+      <Sheet open={!!selectedId} onOpenChange={(open) => !open && handleSetSelectedId(null)}>
         <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto p-0">
           <SheetTitle className="sr-only">Campaign Details</SheetTitle>
           {selectedId && (
             <CampaignDetailPanel
               campaignId={selectedId}
-              onClose={() => setSelectedId(null)}
-              onDeleted={() => { setSelectedId(null); fetchCampaigns(); }}
+              onClose={() => handleSetSelectedId(null)}
+              onDeleted={() => { handleSetSelectedId(null); fetchCampaigns(); }}
             />
           )}
         </SheetContent>

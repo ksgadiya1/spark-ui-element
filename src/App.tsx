@@ -16,7 +16,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { Menu, X, ChevronDown, Bot, Zap, Palette, Code, FileText, Image, BarChart3, Copy, RotateCcw, Plus, History, Loader2, Minus, ArrowLeft, Download, Instagram, Linkedin, Twitter, Facebook, InfinityIcon, Atom, Megaphone } from 'lucide-react';
+import { Menu, X, ChevronDown, Bot, Zap, Palette, Code, FileText, Image, BarChart3, Copy, RotateCcw, Plus, History, Loader2, Minus, ArrowLeft, Download, Instagram, Linkedin, Twitter, Facebook, InfinityIcon, Atom, Megaphone, Pencil, Check } from 'lucide-react';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { CampaignReviewPanel } from '@/components/campaign/CampaignReviewPanel';
 import { CampaignDetailPanel } from '@/components/campaign/CampaignDetailPanel';
@@ -240,9 +240,23 @@ const App = () => {
     const [isNewEntry, setIsNewEntry] = useState(true);
     const [showFormSection, setShowFormSection] = useState(false);
     const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState<'playground' | 'ads'>('playground');
+    const [activeTab, setActiveTab] = useState<'playground' | 'ads'>(
+        () => (localStorage.getItem('activeTab') as 'playground' | 'ads') ?? 'playground'
+    );
     // per-card campaign state: keyed by output index
-    const [cardCampaigns, setCardCampaigns] = useState<Record<number, Campaign>>({})
+    const [cardCampaigns, setCardCampaigns] = useState<Record<number, Campaign>>({});
+    const [editingIndex, setEditingIndex] = useState<number | null>(null);
+    const [editDraft, setEditDraft] = useState<{ displayName: string; content: string }>({ displayName: '', content: '' });
+
+    const startEdit = (index: number, output: typeof outputs[0]) => {
+        setEditingIndex(index);
+        setEditDraft({ displayName: output.displayName, content: output.content });
+    };
+
+    const saveEdit = (index: number) => {
+        setOutputs(prev => prev.map((o, i) => i === index ? { ...o, ...editDraft } : o));
+        setEditingIndex(null);
+    };
 
     useEffect(() => {
         // Check for saved theme preference or default to light mode
@@ -973,7 +987,7 @@ const App = () => {
                         {/* Tab switcher */}
                         <div className="flex items-center bg-muted rounded-lg p-1 gap-1">
                             <button
-                                onClick={() => setActiveTab('playground')}
+                                onClick={() => { setActiveTab('playground'); localStorage.setItem('activeTab', 'playground'); }}
                                 className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
                                     activeTab === 'playground'
                                         ? 'bg-background shadow-sm text-foreground'
@@ -984,7 +998,7 @@ const App = () => {
                                 <span className="hidden sm:inline">AI Playground</span>
                             </button>
                             <button
-                                onClick={() => setActiveTab('ads')}
+                                onClick={() => { setActiveTab('ads'); localStorage.setItem('activeTab', 'ads'); }}
                                 className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
                                     activeTab === 'ads'
                                         ? 'bg-background shadow-sm text-foreground'
@@ -1015,7 +1029,10 @@ const App = () => {
                 <div className="flex h-[calc(100vh-6rem)] overflow-hidden">
                 {activeTab === 'ads' && (
                     <div className="flex-1 overflow-hidden">
-                        <AdsManagerTab />
+                        <AdsManagerTab
+                            initialSelectedId={selectedCampaignId}
+                            onSelectedIdChange={setSelectedCampaignId}
+                        />
                     </div>
                 )}
                 {activeTab === 'playground' && (
@@ -1405,20 +1422,44 @@ const App = () => {
                                         <Card key={`${output.platform}-${output.model}-${index}`} className={output.isError ? 'border-destructive' : ''}>
                                             <CardHeader className="pb-3">
                                                 <div className="flex items-center justify-between">
-                                                    <CardTitle className="flex items-center text-base">
-                                                        <span className="flex items-center">
-                                                            {getPlatformIcon(output.platform)}
-                                                            {output.displayName}
-                                                        </span>
+                                                    <CardTitle className="flex items-center text-base flex-1 min-w-0 mr-2">
+                                                        {editingIndex === index ? (
+                                                            <input
+                                                                className="w-full px-2 py-1 border border-input rounded-md bg-background text-sm font-medium"
+                                                                value={editDraft.displayName}
+                                                                onChange={e => setEditDraft(d => ({ ...d, displayName: e.target.value }))}
+                                                                autoFocus
+                                                            />
+                                                        ) : (
+                                                            <span className="flex items-center truncate">
+                                                                {getPlatformIcon(output.platform)}
+                                                                <span className="truncate">{output.displayName}</span>
+                                                            </span>
+                                                        )}
                                                     </CardTitle>
                                                     <div className="flex items-center space-x-2">
                                                         {cardCampaigns[index] && (
                                                             <span
                                                                 className="cursor-pointer"
-                                                                onClick={() => cardCampaigns[index]?.id && setSelectedCampaignId(cardCampaigns[index].id)}
+                                                                onClick={() => {
+                                                                    if (cardCampaigns[index]?.id) {
+                                                                        setSelectedCampaignId(cardCampaigns[index].id);
+                                                                        setActiveTab('ads');
+                                                                        localStorage.setItem('activeTab', 'ads');
+                                                                    }
+                                                                }}
                                                             >
                                                                 <CampaignStatusBadge status={cardCampaigns[index].sync_status} />
                                                             </span>
+                                                        )}
+                                                        {editingIndex === index ? (
+                                                            <Button variant="ghost" size="sm" onClick={() => saveEdit(index)} className="h-8 w-8 p-0 text-green-600">
+                                                                <Check className="w-4 h-4" />
+                                                            </Button>
+                                                        ) : (
+                                                            <Button variant="ghost" size="sm" onClick={() => startEdit(index, output)} className="h-8 w-8 p-0">
+                                                                <Pencil className="w-4 h-4" />
+                                                            </Button>
                                                         )}
                                                         <Button
                                                             variant="ghost"
@@ -1442,6 +1483,13 @@ const App = () => {
                                             </CardHeader>
                                             <CardContent>
                                                 <div className="bg-muted p-3 rounded-md max-h-[32rem] overflow-auto space-y-4">
+                                                    {editingIndex === index ? (
+                                                        <textarea
+                                                            className="w-full text-sm font-mono bg-background border border-input rounded-md p-2 resize-y min-h-[8rem]"
+                                                            value={editDraft.content}
+                                                            onChange={e => setEditDraft(d => ({ ...d, content: e.target.value }))}
+                                                        />
+                                                    ) : (
                                                     <pre className="text-sm whitespace-pre-wrap font-mono">
                                                         {output.isError ? (
                                                             <span className="text-destructive">{output.content}</span>
@@ -1449,6 +1497,7 @@ const App = () => {
                                                             output.content
                                                         )}
                                                     </pre>
+                                                    )}
 
                                                     {/* Image Output (if available) */}
                                                     {output.imageUrl && (
