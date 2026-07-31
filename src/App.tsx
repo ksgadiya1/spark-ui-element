@@ -11,20 +11,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { Menu, X, ChevronDown, Bot, Zap, Palette, Code, FileText, Image, BarChart3, Copy, RotateCcw, Plus, History, Loader2, Minus, ArrowLeft, Download, Instagram, Linkedin, Twitter, Facebook, InfinityIcon, Atom, Megaphone, Pencil, Check } from 'lucide-react';
+import { Menu, X, ChevronDown, Bot, Zap, Palette, Code, FileText, Image, BarChart3, Copy, RotateCcw, Plus, History, Loader2, Minus, ArrowLeft, Download, Instagram, Linkedin, Twitter, Facebook, InfinityIcon, Atom, Megaphone, Pencil, Check, Link2, LogOut, RefreshCw, UserCircle2 } from 'lucide-react';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { CampaignReviewPanel } from '@/components/campaign/CampaignReviewPanel';
 import { CampaignDetailPanel } from '@/components/campaign/CampaignDetailPanel';
 import { CampaignStatusBadge } from '@/components/campaign/CampaignStatusBadge';
 import { AdsManagerTab } from '@/components/campaign/AdsManagerTab';
-import type { Campaign, CreateCampaignPayload } from '@/services/api';
+import { MetaAssetsPanel } from '@/components/meta/MetaAssetsPanel';
+import { useAuth } from '@/contexts/AuthContext';
+import { useMeta } from '@/contexts/MetaContext';
+import { request, type Campaign, type CreateCampaignPayload } from '@/services/api';
 import { Document, ExternalHyperlink, Packer, Paragraph, TextRun } from 'docx';
 import { dummyHistory, HistoryEntry, ModelResponse } from '@/utils/dummyHistoryHelper';
+import { useLocation, useNavigate } from 'react-router-dom';
 
 // Dynamic JSON structure for Function -> Platform -> Models
 const dynamicPlatformModels = {
@@ -224,6 +226,19 @@ const MessageBox = ({ message, type, onClose }) => {
 const App = () => {
     const [isDarkMode, setIsDarkMode] = useState(false);
     const { toast } = useToast();
+    const { user, logout } = useAuth();
+    const {
+        connectMeta,
+        refreshMeta,
+        isConnected,
+        isSyncing,
+        isLoading: metaLoading,
+        isConnecting,
+        requiresReconnect,
+        status: metaStatus,
+    } = useMeta();
+    const navigate = useNavigate();
+    const location = useLocation();
     const isMobile = useIsMobile();
     const [theme, setTheme] = useState('light');
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -268,6 +283,48 @@ const App = () => {
             document.documentElement.classList.add('dark');
         }
     }, []);
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        if (params.get('meta_connected') !== '1') {
+            return;
+        }
+
+        refreshMeta()
+            .then(() => {
+                toast({
+                    title: "Meta connected",
+                    description: "Your imported assets have been refreshed.",
+                    variant: "success",
+                });
+            })
+            .catch((error) => {
+                toast({
+                    title: "Meta refresh failed",
+                    description: error instanceof Error ? error.message : "Unable to refresh imported Meta assets.",
+                    variant: "destructive",
+                });
+            })
+            .finally(() => {
+                navigate(location.pathname, { replace: true });
+            });
+    }, [location.pathname, location.search, navigate, refreshMeta, toast]);
+
+    const metaBadgeLabel = {
+        idle: "Meta Idle",
+        loading: "Meta Loading",
+        not_connected: "Meta Not Connected",
+        connecting: "Meta Connecting",
+        connected: "Meta Connected",
+        reconnect_required: "Meta Reconnect Required",
+        syncing: "Meta Syncing",
+        sync_failed: "Meta Sync Failed",
+    }[metaStatus];
+
+    const handleLogout = useCallback(() => {
+        logout();
+        navigate('/login', { replace: true });
+    }, [logout, navigate]);
 
     const toggleTheme = () => {
         const newTheme = !isDarkMode;
@@ -605,18 +662,18 @@ const App = () => {
         const apiConfigs = [
             {
                 condition: type.trim().toLowerCase() === "post generation",
-                url: "http://127.0.0.1:5000/generate-post",
+                url: "/generate-post",
                 name: "Post Generation"
             },
             // Add more API configurations here as they become available
             {
                 condition: type.trim().toLowerCase() === "image generation",
-                url: "http://127.0.0.1:5000/generate-image-only",
+                url: "/generate-image-only",
                 name: "Image Generation"
             },
             {
                 condition: type.trim().toLowerCase() === "image description",
-                url: "http://127.0.0.1:5000/generate-image-description",
+                url: "/generate-image-description",
                 name: "Image Description"
             },
         ];
@@ -650,25 +707,21 @@ const App = () => {
 
                     formData.append("payload", JSON.stringify(payloadForFormData)); // Stringify the clean payload JSON
 
-                    response = await fetch(config.url, {
+                    response = await request<ApiResponse>(config.url, {
                         method: "POST",
+                        auth: true,
                         body: formData, // No Content-Type header needed for FormData; browser sets it.
                     });
                 } else {
                     // For other APIs, use application/json
-                    response = await fetch(config.url, {
+                    response = await request<ApiResponse>(config.url, {
                         method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(payload),
+                        auth: true,
+                        body: payload,
                     });
                 }
 
-                const data: ApiResponse = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.error || "Unknown error from server");
-                }
-                return { success: true, data, apiName: config.name };
+                return { success: true, data: response, apiName: config.name };
             } catch (error) {
                 console.error(`Error calling ${config.name} API:`, error);
                 return { success: false, error: error.message, apiName: config.name };
@@ -965,30 +1018,32 @@ const App = () => {
             <div className="min-h-screen bg-background text-foreground transition-colors duration-300 flex flex-col">
                 {/* Header */}
                 <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-                    <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
+                    <div className="mx-auto w-full max-w-[1600px] px-4 py-4 lg:px-6">
+                        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                        <div className="flex items-center gap-3 min-w-0">
                             <Button
                                 variant="outline"
                                 size="sm"
                                 onClick={toggleLeftPanel}
-                                className="mr-2"
+                                className="shrink-0"
                             >
                                 {isLeftPanelVisible ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
                             </Button>
-                            <div className="w-10 h-10 bg-gradient-primary rounded-lg flex items-center justify-center shadow-glow">
+                            <div className="w-10 h-10 bg-gradient-primary rounded-xl flex items-center justify-center shadow-glow shrink-0">
                                 <FontAwesomeIcon icon={faBrain} className="text-primary-foreground text-lg" />
                             </div>
-                            <div>
-                                <h1 className="text-xl font-bold">AI Playground</h1>
+                            <div className="min-w-0">
+                                <h1 className="text-xl font-bold truncate">AI Playground</h1>
                                 <p className="text-sm text-muted-foreground">Modern AI application</p>
                             </div>
                         </div>
 
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between xl:justify-end xl:flex-1">
                         {/* Tab switcher */}
-                        <div className="flex items-center bg-muted rounded-lg p-1 gap-1">
+                        <div className="flex items-center bg-muted rounded-xl p-1 gap-1 self-start">
                             <button
                                 onClick={() => { setActiveTab('playground'); localStorage.setItem('activeTab', 'playground'); }}
-                                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                                     activeTab === 'playground'
                                         ? 'bg-background shadow-sm text-foreground'
                                         : 'text-muted-foreground hover:text-foreground'
@@ -999,7 +1054,7 @@ const App = () => {
                             </button>
                             <button
                                 onClick={() => { setActiveTab('ads'); localStorage.setItem('activeTab', 'ads'); }}
-                                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
                                     activeTab === 'ads'
                                         ? 'bg-background shadow-sm text-foreground'
                                         : 'text-muted-foreground hover:text-foreground'
@@ -1010,23 +1065,68 @@ const App = () => {
                             </button>
                         </div>
 
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={toggleTheme}
-                            className="transition-all duration-300 hover:shadow-glow"
-                        >
-                            <FontAwesomeIcon
-                                icon={isDarkMode ? faSun : faMoon}
-                                className="mr-2"
-                            />
-                            {isDarkMode ? 'Light' : 'Dark'}
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                            <Badge variant={isConnected ? "default" : "outline"} className="hidden lg:inline-flex h-9 rounded-full px-4">
+                                {metaBadgeLabel}
+                            </Badge>
+
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void (requiresReconnect || !isConnected ? connectMeta() : refreshMeta())}
+                                disabled={isSyncing || metaLoading || isConnecting}
+                                className="transition-all duration-300"
+                            >
+                                {isSyncing || metaLoading || isConnecting ? (
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                ) : isConnected && !requiresReconnect ? (
+                                    <RefreshCw className="w-4 h-4 mr-2" />
+                                ) : (
+                                    <Link2 className="w-4 h-4 mr-2" />
+                                )}
+                                <span className="hidden sm:inline">
+                                    {requiresReconnect ? 'Reconnect Meta' : isConnected ? 'Refresh Meta' : 'Connect Meta'}
+                                </span>
+                            </Button>
+
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={toggleTheme}
+                                className="transition-all duration-300 hover:shadow-glow"
+                            >
+                                <FontAwesomeIcon
+                                    icon={isDarkMode ? faSun : faMoon}
+                                    className="mr-2"
+                                />
+                                {isDarkMode ? 'Light' : 'Dark'}
+                            </Button>
+
+                            <div className="hidden md:flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 bg-background">
+                                <UserCircle2 className="w-4 h-4 text-muted-foreground" />
+                                <div className="leading-tight">
+                                    <p className="text-sm font-medium">{user?.name ?? 'Account'}</p>
+                                    <p className="text-xs text-muted-foreground">{user?.email}</p>
+                                </div>
+                            </div>
+
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleLogout}
+                                className="text-muted-foreground"
+                            >
+                                <LogOut className="w-4 h-4 mr-2" />
+                                <span className="hidden sm:inline">Logout</span>
+                            </Button>
+                        </div>
+                        </div>
+                        </div>
                     </div>
                 </header>
 
                 {/* Main Content */}
-                <div className="flex h-[calc(100vh-6rem)] overflow-hidden">
+                <div className="flex h-[calc(100vh-6rem)] overflow-hidden bg-muted/20">
                 {activeTab === 'ads' && (
                     <div className="flex-1 overflow-hidden">
                         <AdsManagerTab
@@ -1038,8 +1138,8 @@ const App = () => {
                 {activeTab === 'playground' && (
                     <>
                     {/* Left Panel: Navigation and Controls */}
-                    <div className={`${isLeftPanelVisible ? (isMobile ? 'w-full' : 'w-80') : 'w-0'} transition-all duration-300 overflow-hidden border-r border-border bg-card h-full ${isMobile && isLeftPanelVisible ? 'absolute z-10' : ''}`}>
-                        <div className="p-6 h-full flex flex-col overflow-y-auto">
+                    <div className={`${isLeftPanelVisible ? (isMobile ? 'w-full' : 'w-[360px]') : 'w-0'} transition-all duration-300 overflow-hidden border-r border-border bg-card/70 h-full ${isMobile && isLeftPanelVisible ? 'absolute z-10 inset-y-0 left-0 shadow-xl' : ''}`}>
+                        <div className="h-full overflow-y-auto px-4 py-5 lg:px-5">
                             {/* + New Button */}
                             {/* <div className="mb-6">
                                 {!showFormSection ? (
@@ -1106,9 +1206,11 @@ const App = () => {
 
                             {/* Form Section */}
 
-                            <div className="space-y-6 pt-3 border-border">
+                            <div className="space-y-5">
+                                <MetaAssetsPanel />
+
                                 {/* Function Selector */}
-                                <div className="space-y-2">
+                                <div className="space-y-2 rounded-2xl border border-border bg-background/90 p-4 shadow-sm">
                                     <label className="text-sm font-medium">Function</label>
                                     <Select value={selectedFunction} onValueChange={setSelectedFunction}>
                                         <SelectTrigger className="w-full">
@@ -1130,7 +1232,7 @@ const App = () => {
                                 </div>
 
                                 {/* AI Platform Selector */}
-                                <div className="space-y-2">
+                                <div className="space-y-2 rounded-2xl border border-border bg-background/90 p-4 shadow-sm">
                                     <label className="text-sm font-medium">AI Platforms</label>
                                     <div className="border border-input rounded-md p-3 bg-background min-h-[2.5rem]">
                                         {!selectedFunction ? (
@@ -1168,7 +1270,7 @@ const App = () => {
                                 </div>
 
                                 {/* Model Selector */}
-                                <div className="space-y-2">
+                                <div className="space-y-2 rounded-2xl border border-border bg-background/90 p-4 shadow-sm">
                                     <label className="text-sm font-medium">Models</label>
                                     <div className="border border-input rounded-md p-3 bg-background min-h-[2.5rem]">
                                         {selectedPlatforms.length === 0 ? (
@@ -1213,7 +1315,7 @@ const App = () => {
 
                                 {/* Dynamic Input Section */}
                                 {selectedFunction && functionConfigs.find(f => f.name === selectedFunction)?.inputs.length > 0 && (
-                                    <div className="space-y-4">
+                                    <div className="space-y-4 rounded-2xl border border-border bg-background/90 p-4 shadow-sm">
                                         <label className="text-sm font-medium">Additional Parameters</label>
                                         {functionConfigs.find(f => f.name === selectedFunction)?.inputs.map(input => (
                                             <div key={input.id} className="space-y-2">
@@ -1355,7 +1457,7 @@ const App = () => {
                                 )}
 
                                 {/* Prompt Text Area */}
-                                <div className="space-y-2">
+                                <div className="space-y-2 rounded-2xl border border-border bg-background/90 p-4 shadow-sm">
                                     <label className="text-sm font-medium">Prompt</label>
                                     <textarea
                                         rows={4}
@@ -1393,11 +1495,11 @@ const App = () => {
                     </div>
 
                     {/* Right Panel: Model Outputs */}
-                    <div className={`flex-1 p-6 h-full overflow-y-auto ${isMobile && isLeftPanelVisible ? 'hidden' : ''}`}>
-                        <div className="h-full">
+                    <div className={`flex-1 h-full overflow-y-auto ${isMobile && isLeftPanelVisible ? 'hidden' : ''}`}>
+                        <div className="h-full p-4 lg:p-6">
                             {isLoading ? (
-                                <Card className="h-full flex items-center justify-center">
-                                    <CardContent className="text-center">
+                                <Card className="h-full rounded-3xl border-border/80 shadow-sm flex items-center justify-center">
+                                    <CardContent className="text-center p-8">
                                         <Loader2 className="w-16 h-16 mx-auto mb-4 text-muted-foreground animate-spin" />
                                         <h3 className="text-lg font-semibold mb-2">Generating Response...</h3>
                                         <p className="text-muted-foreground">
@@ -1406,8 +1508,8 @@ const App = () => {
                                     </CardContent>
                                 </Card>
                             ) : outputs.length === 0 ? (
-                                <Card className="h-full flex items-center justify-center">
-                                    <CardContent className="text-center">
+                                <Card className="h-full rounded-3xl border-border/80 shadow-sm flex items-center justify-center">
+                                    <CardContent className="text-center p-8">
                                         <Bot className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
                                         <h3 className="text-lg font-semibold mb-2">Welcome to AI Playground!</h3>
                                         <p className="text-muted-foreground">
@@ -1417,7 +1519,7 @@ const App = () => {
                                 </Card>
                             ) : (
                                 //  <div className={`h-full ${outputs.length > 3 ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto' : 'space-y-4 overflow-y-auto'}`}>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto">
+                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 overflow-y-auto">
                                     {outputs.map((output, index) => (
                                         <Card key={`${output.platform}-${output.model}-${index}`} className={output.isError ? 'border-destructive' : ''}>
                                             <CardHeader className="pb-3">
@@ -1556,8 +1658,6 @@ const App = () => {
 
                 </div>
             </div>
-            <Toaster />
-            <Sonner />
 
             {/* Campaign detail sheet */}
             <Sheet open={!!selectedCampaignId} onOpenChange={(open) => !open && setSelectedCampaignId(null)}>
@@ -1569,10 +1669,6 @@ const App = () => {
                             onDeleted={() => {
                                 setSelectedCampaignId(null);
                                 setCardCampaigns({});
-                            }}
-                            onDuplicated={(newCampaign) => {
-                                setSelectedCampaignId(newCampaign.id);
-                                toast({ title: 'Campaign duplicated', description: newCampaign.name, variant: 'success' });
                             }}
                         />
                     )}

@@ -5,6 +5,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MetaAssetSelectors, type MetaAssetSelection } from "@/components/meta/MetaAssetSelectors";
+import { MetaReconnectAlert } from "@/components/meta/MetaReconnectAlert";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +16,7 @@ import {
   AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
   AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useMeta } from "@/contexts/MetaContext";
 import { useToast } from "@/hooks/use-toast";
 import { CampaignStatusBadge } from "./CampaignStatusBadge";
 import { CampaignAnalytics } from "./CampaignAnalytics";
@@ -22,7 +25,8 @@ import { CampaignCreativePreview } from "./CampaignCreativePreview";
 import {
   getCampaign, getCampaignInsights, updateCampaign,
   pauseCampaign, resumeCampaign, deleteCampaign,
-  type Campaign, type CampaignInsights,
+  getAdSets, getAds, getAdCreative,
+  isMetaReconnectError, type Campaign, type CampaignInsights, type AdSet, type Ad, type AdCreative,
 } from "@/services/api";
 
 interface Props {
@@ -44,23 +48,75 @@ interface EditForm {
 
 export function CampaignDetailPanel({ campaignId, onClose, onDeleted }: Props) {
   const { toast } = useToast();
+  const { businesses, connectMeta } = useMeta();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [insights, setInsights] = useState<CampaignInsights | null>(null);
   const [loadingCampaign, setLoadingCampaign] = useState(true);
   const [loadingInsights, setLoadingInsights] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [insightsError, setInsightsError] = useState<string | null>(null);
+  const [metaReconnectError, setMetaReconnectError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
+  const [editAssetSelection, setEditAssetSelection] = useState<MetaAssetSelection>({
+    businessId: "",
+    adAccountId: "",
+    pageId: "",
+    instagramAccountId: "",
+  });
   const [savingEdit, setSavingEdit] = useState(false);
+  const [adsets, setAdsets] = useState<AdSet[]>([]);
+  const [adsMap, setAdsMap] = useState<Record<string, Ad[]>>({});
+  const [creativesMap, setCreativesMap] = useState<Record<string, AdCreative>>({});
+  const [loadingStructure, setLoadingStructure] = useState(false);
+  const [structureLoaded, setStructureLoaded] = useState(false);
+
+  const fetchStructure = useCallback(async () => {
+    setLoadingStructure(true);
+    try {
+      setMetaReconnectError(null);
+      const sets = await getAdSets(campaignId);
+      setAdsets(sets);
+      const adsEntries = await Promise.all(
+        sets.map(async (s) => [s.id, await getAds(s.id)] as [string, Ad[]])
+      );
+      const newAdsMap: Record<string, Ad[]> = Object.fromEntries(adsEntries);
+      setAdsMap(newAdsMap);
+      const allAds = adsEntries.flatMap(([, ads]) => ads);
+      const creativeEntries = await Promise.all(
+        allAds
+          .filter((a) => a.meta_creative_id)
+          .map(async (a) => {
+            try {
+              const c = await getAdCreative(a.meta_creative_id!);
+              return [a.meta_creative_id!, c] as [string, AdCreative];
+            } catch { return null; }
+          })
+      );
+      setCreativesMap(Object.fromEntries(creativeEntries.filter(Boolean) as [string, AdCreative][]));
+      await fetchCampaign();
+      setStructureLoaded(true);
+    } catch (err) {
+      if (isMetaReconnectError(err)) {
+        setMetaReconnectError((err as Error).message);
+      }
+      toast({ title: "Failed to load structure", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setLoadingStructure(false);
+    }
+  }, [campaignId, fetchCampaign, toast]);
 
   const fetchInsights = useCallback(async (id: string) => {
     setLoadingInsights(true);
     try {
+      setMetaReconnectError(null);
       const data = await getCampaignInsights(id);
       setInsights(data);
       setInsightsError(null);
     } catch (err) {
+      if (isMetaReconnectError(err)) {
+        setMetaReconnectError((err as Error).message);
+      }
       setInsightsError((err as Error).message);
     } finally {
       setLoadingInsights(false);
@@ -69,9 +125,13 @@ export function CampaignDetailPanel({ campaignId, onClose, onDeleted }: Props) {
 
   const fetchCampaign = useCallback(async () => {
     try {
+      setMetaReconnectError(null);
       const data = await getCampaign(campaignId);
       setCampaign(data);
     } catch (err) {
+      if (isMetaReconnectError(err)) {
+        setMetaReconnectError((err as Error).message);
+      }
       toast({ title: "Failed to load campaign", description: (err as Error).message, variant: "destructive" });
     } finally {
       setLoadingCampaign(false);
@@ -91,6 +151,11 @@ export function CampaignDetailPanel({ campaignId, onClose, onDeleted }: Props) {
 
   const startEdit = () => {
     if (!campaign) return;
+    const business = businesses.find((candidate) =>
+      candidate.ad_accounts.some((account) => account.id === campaign.ad_account_id) ||
+      candidate.pages.some((page) => page.id === campaign.page_id),
+    );
+
     setEditForm({
       name: campaign.name,
       headline: campaign.headline,
@@ -101,6 +166,12 @@ export function CampaignDetailPanel({ campaignId, onClose, onDeleted }: Props) {
       daily_budget: (campaign.daily_budget / 100).toFixed(2),
       image_url: campaign.image_url,
     });
+    setEditAssetSelection({
+      businessId: business?.id ?? "",
+      adAccountId: campaign.ad_account_id ?? "",
+      pageId: campaign.page_id ?? "",
+      instagramAccountId: campaign.instagram_account_id ?? "",
+    });
     setEditing(true);
   };
 
@@ -110,6 +181,7 @@ export function CampaignDetailPanel({ campaignId, onClose, onDeleted }: Props) {
     if (!editForm) return;
     setSavingEdit(true);
     try {
+      setMetaReconnectError(null);
       const updated = await updateCampaign(campaignId, {
         name: editForm.name,
         headline: editForm.headline,
@@ -119,12 +191,18 @@ export function CampaignDetailPanel({ campaignId, onClose, onDeleted }: Props) {
         cta: editForm.cta || undefined,
         daily_budget: Math.round(parseFloat(editForm.daily_budget) * 100),
         image_url: editForm.image_url,
+        ad_account_id: editAssetSelection.adAccountId,
+        page_id: editAssetSelection.pageId,
+        instagram_account_id: editAssetSelection.instagramAccountId || undefined,
       });
       setCampaign(updated);
       setEditing(false);
       setEditForm(null);
       toast({ title: "Campaign updated", variant: "success" });
     } catch (err) {
+      if (isMetaReconnectError(err)) {
+        setMetaReconnectError((err as Error).message);
+      }
       toast({ title: "Update failed", description: (err as Error).message, variant: "destructive" });
     } finally {
       setSavingEdit(false);
@@ -138,10 +216,14 @@ export function CampaignDetailPanel({ campaignId, onClose, onDeleted }: Props) {
   ) => {
     setActionLoading(label);
     try {
+      setMetaReconnectError(null);
       const result = await fn();
       onSuccess?.(result);
       toast({ title: `${label} successful`, variant: "success" });
     } catch (err) {
+      if (isMetaReconnectError(err)) {
+        setMetaReconnectError((err as Error).message);
+      }
       toast({ title: `${label} failed`, description: (err as Error).message, variant: "destructive" });
     } finally {
       setActionLoading(null);
@@ -190,6 +272,10 @@ export function CampaignDetailPanel({ campaignId, onClose, onDeleted }: Props) {
         </div>
       </div>
 
+      {metaReconnectError && (
+        <MetaReconnectAlert message={metaReconnectError} onReconnect={() => void connectMeta()} compact />
+      )}
+
       {/* Edit Form */}
       {editing && editForm && (
         <Card className="border-primary/40">
@@ -224,6 +310,14 @@ export function CampaignDetailPanel({ campaignId, onClose, onDeleted }: Props) {
                 )}
               </div>
             ))}
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Imported Meta Assets</Label>
+              <MetaAssetSelectors
+                value={editAssetSelection}
+                onChange={setEditAssetSelection}
+                disabled={savingEdit}
+              />
+            </div>
             <div className="flex gap-2 pt-1">
               <Button size="sm" onClick={saveEdit} disabled={savingEdit}>
                 {savingEdit ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Check className="w-4 h-4 mr-1" />}
@@ -280,11 +374,12 @@ export function CampaignDetailPanel({ campaignId, onClose, onDeleted }: Props) {
 
       {/* Tabs */}
       <Tabs defaultValue="overview">
-        <TabsList className="w-full grid grid-cols-4">
+        <TabsList className="w-full grid grid-cols-5">
           <TabsTrigger value="overview"  className="text-xs"><Info className="w-3 h-3 mr-1" />Overview</TabsTrigger>
           <TabsTrigger value="analytics" className="text-xs"><BarChart3 className="w-3 h-3 mr-1" />Analytics</TabsTrigger>
-          <TabsTrigger value="creative"  className="text-xs"><Palette className="w-3 h-3 mr-1" />Creative</TabsTrigger>
+          <TabsTrigger value="creative"  className="text-xs" onClick={() => !structureLoaded && void fetchStructure()}><Palette className="w-3 h-3 mr-1" />Creative</TabsTrigger>
           <TabsTrigger value="leads"     className="text-xs"><Users className="w-3 h-3 mr-1" />Leads</TabsTrigger>
+          <TabsTrigger value="structure" className="text-xs" onClick={() => !structureLoaded && fetchStructure()}>Structure</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -301,6 +396,9 @@ export function CampaignDetailPanel({ campaignId, onClose, onDeleted }: Props) {
                 ...(campaign.description ? [["Description", campaign.description]] : []),
                 ["Daily Budget", `$${(campaign.daily_budget / 100).toFixed(2)}`],
                 ["Target URL",   campaign.target_url],
+                ["Ad Account", campaign.ad_account_id ?? "Not selected"],
+                ["Page", campaign.page_id ?? "Not selected"],
+                ["Instagram Account", campaign.instagram_account_id ?? "Optional / not selected"],
                 ...(campaign.cta ? [["CTA", campaign.cta]] : []),
                 ["Created",      new Date(campaign.created_at).toLocaleString()],
                 ...(campaign.published_at   ? [["Published",   new Date(campaign.published_at).toLocaleString()]]   : []),
@@ -373,6 +471,67 @@ export function CampaignDetailPanel({ campaignId, onClose, onDeleted }: Props) {
         {/* Leads Tab */}
         <TabsContent value="leads" className="mt-3">
           <CampaignLeads campaignId={campaignId} />
+        </TabsContent>
+
+        {/* Structure Tab */}
+        <TabsContent value="structure" className="mt-3 space-y-2">
+          <div className="flex justify-end">
+            <Button size="sm" variant="outline" onClick={fetchStructure} disabled={loadingStructure}>
+              {loadingStructure ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1" />}
+              Refresh
+            </Button>
+          </div>
+          {loadingStructure ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading structure…
+            </div>
+          ) : adsets.length === 0 && structureLoaded ? (
+            <p className="text-sm text-muted-foreground py-4">No ad sets found.</p>
+          ) : (
+            adsets.map((adset) => (
+              <Card key={adset.id} className="border">
+                <CardHeader className="pb-2 pt-3 px-4">
+                  <CardTitle className="text-sm flex items-center justify-between">
+                    <span>📦 {adset.name}</span>
+                    {adset.status && <span className="text-xs font-normal text-muted-foreground">{adset.status}</span>}
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground font-mono">{adset.id}</p>
+                </CardHeader>
+                <CardContent className="px-4 pb-3 space-y-2">
+                  {(adsMap[adset.id] ?? []).length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No ads</p>
+                  ) : (
+                    (adsMap[adset.id] ?? []).map((ad) => {
+                      const creative = ad.meta_creative_id ? creativesMap[ad.meta_creative_id] : null;
+                      return (
+                        <div key={ad.id} className="pl-3 border-l-2 border-muted space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium">🎯 {ad.name}</span>
+                            {ad.status && <span className="text-xs text-muted-foreground">{ad.status}</span>}
+                          </div>
+                          <p className="text-xs text-muted-foreground font-mono">{ad.id}</p>
+                          {creative && (
+                            <div className="pl-3 border-l-2 border-muted/50 mt-1 space-y-1">
+                              <p className="text-xs font-medium text-muted-foreground">🎨 Creative</p>
+                              {creative.image_url && (
+                                <img src={creative.image_url} alt="" className="rounded w-full max-h-24 object-cover" />
+                              )}
+                              {creative.title && <p className="text-xs font-semibold">{creative.title}</p>}
+                              {creative.body && <p className="text-xs text-muted-foreground line-clamp-2">{creative.body}</p>}
+                              {creative.call_to_action_type && (
+                                <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">{creative.call_to_action_type}</span>
+                              )}
+                              <p className="text-xs font-mono text-muted-foreground">{creative.id}</p>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </CardContent>
+              </Card>
+            ))
+          )}
         </TabsContent>
       </Tabs>
     </div>

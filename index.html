@@ -22,7 +22,66 @@
   </head>
 
   <body>
+    <div id="fb-root"></div>
     <div id="root"></div>
+    <script>
+      (function () {
+        var appId = "%VITE_META_APP_ID%";
+        var version = "%VITE_META_API_VERSION%" || "v21.0";
+        var locale = "%VITE_META_SDK_LOCALE%" || "en_US";
+
+        window.__facebookSdkReady = new Promise(function (resolve, reject) {
+          if (!appId) {
+            resolve(null);
+            return;
+          }
+
+          window.fbAsyncInit = function () {
+            if (!window.FB) {
+              reject(new Error("Facebook SDK failed to initialize."));
+              return;
+            }
+
+            window.FB.init({
+              appId: appId,
+              cookie: true,
+              xfbml: false,
+              version: version,
+            });
+
+            if (window.FB.AppEvents && typeof window.FB.AppEvents.logPageView === "function") {
+              window.FB.AppEvents.logPageView();
+            }
+
+            resolve(window.FB);
+          };
+
+          var d = document;
+          var scriptId = "facebook-jssdk";
+          var firstScript = d.getElementsByTagName("script")[0];
+
+          if (d.getElementById(scriptId)) {
+            resolve(window.FB || null);
+            return;
+          }
+
+          var js = d.createElement("script");
+          js.id = scriptId;
+          js.async = true;
+          js.src = "https://connect.facebook.net/" + locale + "/sdk.js";
+          js.onerror = function () {
+            reject(new Error("Facebook SDK failed to load."));
+          };
+
+          if (firstScript && firstScript.parentNode) {
+            firstScript.parentNode.insertBefore(js, firstScript);
+            return;
+          }
+
+          d.head.appendChild(js);
+        });
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
